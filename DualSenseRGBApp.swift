@@ -1,3 +1,4 @@
+
 import SwiftUI
 import GameController
 import UIKit
@@ -33,24 +34,28 @@ final class ControllerManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(controllerConnected(_:)),
             name: .GCControllerDidConnect,
             object: nil
         )
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(controllerDisconnected(_:)),
             name: .GCControllerDidDisconnect,
             object: nil
         )
+
         refreshControllers()
     }
 
     func startDiscovery() {
         status = "Looking for paired game controllers…"
         GCController.startWirelessControllerDiscovery { }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             self.refreshControllers()
         }
@@ -72,10 +77,11 @@ final class ControllerManager: NSObject, ObservableObject {
         controller = found
         controllerName = found.vendorName ?? "Game Controller"
         isConnected = true
+
         if found.light == nil {
-            status = "Connected, but iOS did not expose a controllable light."
+            status = "Connected, but no controllable light is available."
         } else {
-            status = "Connected. Adjust RGB or brightness."
+            status = "Connected. Adjust your controller lighting."
             applyLightColor()
         }
     }
@@ -111,17 +117,19 @@ final class ControllerManager: NSObject, ObservableObject {
     private func applyLightColor() {
         guard let light = controller?.light else {
             if isConnected {
-                status = "This controller connection does not expose a controllable light."
+                status = "No controllable controller light is available."
             }
             return
         }
 
         let factor = brightness / 100
+
         light.color = GCColor(
             red: Float((red / 255) * factor),
             green: Float((green / 255) * factor),
             blue: Float((blue / 255) * factor)
         )
+
         status = "Color applied · \(hexColor) · \(Int(brightness))% brightness"
     }
 
@@ -133,14 +141,20 @@ final class ControllerManager: NSObject, ObservableObject {
 
         stopRainbow()
         isRainbowRunning = true
-        status = "Rainbow started. iOS may pause it when this app is in the background."
+        status = "Rainbow is running."
         hue = 0
 
         let timer = Timer(timeInterval: 0.06, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let light = self.controller?.light else { return }
+                guard let self, let light = self.controller?.light else {
+                    return
+                }
+
                 self.hue += 0.0035
-                if self.hue >= 1 { self.hue = 0 }
+
+                if self.hue >= 1 {
+                    self.hue = 0
+                }
 
                 let ui = UIColor(
                     hue: self.hue,
@@ -148,18 +162,26 @@ final class ControllerManager: NSObject, ObservableObject {
                     brightness: CGFloat(self.brightness / 100),
                     alpha: 1
                 )
+
                 var r: CGFloat = 0
                 var g: CGFloat = 0
                 var b: CGFloat = 0
                 var a: CGFloat = 0
+
                 ui.getRed(&r, green: &g, blue: &b, alpha: &a)
 
                 self.red = Double(r * 255)
                 self.green = Double(g * 255)
                 self.blue = Double(b * 255)
-                light.color = GCColor(red: Float(r), green: Float(g), blue: Float(b))
+
+                light.color = GCColor(
+                    red: Float(r),
+                    green: Float(g),
+                    blue: Float(b)
+                )
             }
         }
+
         RunLoop.main.add(timer, forMode: .common)
         rainbowTimer = timer
     }
@@ -173,16 +195,21 @@ final class ControllerManager: NSObject, ObservableObject {
 
 struct ContentView: View {
     @StateObject private var manager = ControllerManager()
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     VStack(spacing: 8) {
-                        Image(systemName: manager.isConnected ? "gamecontroller.fill" : "gamecontroller")
-                            .font(.system(size: 48))
-                            .foregroundColor(manager.isConnected ? .green : .secondary)
+                        Image(
+                            systemName: manager.isConnected
+                                ? "gamecontroller.fill"
+                                : "gamecontroller"
+                        )
+                        .font(.system(size: 48))
+                        .foregroundColor(
+                            manager.isConnected ? .green : .secondary
+                        )
 
                         Text(manager.controllerName)
                             .font(.title2.bold())
@@ -196,8 +223,11 @@ struct ContentView: View {
                     Button {
                         manager.startDiscovery()
                     } label: {
-                        Label("Refresh Controller", systemImage: "arrow.clockwise")
-                            .frame(maxWidth: .infinity)
+                        Label(
+                            "Refresh Controller",
+                            systemImage: "arrow.clockwise"
+                        )
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
 
@@ -208,7 +238,10 @@ struct ContentView: View {
                             .overlay {
                                 Text(manager.hexColor)
                                     .font(.title3.monospaced().bold())
-                                    .foregroundStyle(manager.brightness < 45 ? .white : .black)
+                                    .foregroundStyle(
+                                        manager.brightness < 45
+                                            ? .white : .black
+                                    )
                             }
 
                         Text("Live color preview")
@@ -217,42 +250,73 @@ struct ContentView: View {
                     }
 
                     VStack(spacing: 14) {
-                        rgbSlider(title: "Red", value: manager.red, tint: .red) {
+                        rgbSlider(
+                            title: "Red",
+                            value: manager.red,
+                            tint: .red
+                        ) {
                             manager.setRed($0)
                         }
-                        rgbSlider(title: "Green", value: manager.green, tint: .green) {
+
+                        rgbSlider(
+                            title: "Green",
+                            value: manager.green,
+                            tint: .green
+                        ) {
                             manager.setGreen($0)
                         }
-                        rgbSlider(title: "Blue", value: manager.blue, tint: .blue) {
+
+                        rgbSlider(
+                            title: "Blue",
+                            value: manager.blue,
+                            tint: .blue
+                        ) {
                             manager.setBlue($0)
                         }
                     }
                     .padding()
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .background(
+                        .thinMaterial,
+                        in: RoundedRectangle(cornerRadius: 16)
+                    )
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Brightness")
+
                             Spacer()
+
                             Text("\(Int(manager.brightness))%")
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
-                        Slider(value: Binding(
-                            get: { manager.brightness },
-                            set: { manager.setBrightness($0) }
-                        ), in: 0...100, step: 1)
+
+                        Slider(
+                            value: Binding(
+                                get: { manager.brightness },
+                                set: { manager.setBrightness($0) }
+                            ),
+                            in: 0...100,
+                            step: 1
+                        )
                         .tint(.yellow)
                     }
                     .padding()
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .background(
+                        .thinMaterial,
+                        in: RoundedRectangle(cornerRadius: 16)
+                    )
 
                     Button {
-                        manager.isRainbowRunning ? manager.stopRainbow() : manager.startRainbow()
+                        manager.isRainbowRunning
+                            ? manager.stopRainbow()
+                            : manager.startRainbow()
                     } label: {
                         Label(
-                            manager.isRainbowRunning ? "Stop Rainbow" : "Start Rainbow",
-                            systemImage: manager.isRainbowRunning ? "stop.fill" : "rainbow"
+                            manager.isRainbowRunning
+                                ? "Stop Rainbow" : "Start Rainbow",
+                            systemImage: manager.isRainbowRunning
+                                ? "stop.fill" : "rainbow"
                         )
                         .font(.headline)
                         .frame(maxWidth: .infinity)
@@ -261,22 +325,10 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(manager.isRainbowRunning ? .red : .purple)
                     .disabled(!manager.isConnected)
-
-                    Text("Background note: iOS can suspend apps after you switch to Instagram or another app. This build does not guarantee that animated Rainbow continues in the background. A static color may remain on the controller after the last color command.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
                 }
                 .padding()
             }
             .navigationTitle("DualSense RGB")
-        }
-        .onChange(of: scenePhase) { phase in
-            if phase == .background && manager.isRainbowRunning {
-                manager.status = "App is in the background. iOS may pause Rainbow until you return."
-            } else if phase == .active && manager.isRainbowRunning {
-                manager.status = "App active. Rainbow is running."
-            }
         }
     }
 
@@ -290,15 +342,22 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(title)
+
                 Spacer()
+
                 Text("\(Int(value))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
-            Slider(value: Binding(
-                get: { value },
-                set: { onChange($0) }
-            ), in: 0...255, step: 1)
+
+            Slider(
+                value: Binding(
+                    get: { value },
+                    set: { onChange($0) }
+                ),
+                in: 0...255,
+                step: 1
+            )
             .tint(tint)
         }
     }
