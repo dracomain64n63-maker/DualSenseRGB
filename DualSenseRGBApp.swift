@@ -8,11 +8,28 @@ final class ControllerManager: NSObject, ObservableObject {
     @Published var status = "Pair your DualSense in iPhone Settings → Bluetooth."
     @Published var isConnected = false
     @Published var isRainbowRunning = false
-    @Published var selectedColor = Color.blue
+
+    @Published var red: Double = 0
+    @Published var green: Double = 122
+    @Published var blue: Double = 255
+    @Published var brightness: Double = 100
 
     private var controller: GCController?
     private var rainbowTimer: Timer?
     private var hue: CGFloat = 0
+
+    var previewColor: Color {
+        let factor = brightness / 100
+        return Color(
+            red: (red / 255) * factor,
+            green: (green / 255) * factor,
+            blue: (blue / 255) * factor
+        )
+    }
+
+    var hexColor: String {
+        String(format: "#%02X%02X%02X", Int(red), Int(green), Int(blue))
+    }
 
     override init() {
         super.init()
@@ -34,7 +51,9 @@ final class ControllerManager: NSObject, ObservableObject {
     func startDiscovery() {
         status = "Looking for paired game controllers…"
         GCController.startWirelessControllerDiscovery { }
-        refreshControllers()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            self.refreshControllers()
+        }
     }
 
     func refreshControllers() {
@@ -54,9 +73,10 @@ final class ControllerManager: NSObject, ObservableObject {
         controllerName = found.vendorName ?? "Game Controller"
         isConnected = true
         if found.light == nil {
-            status = "Connected, but iOS did not expose a controllable light for this controller."
+            status = "Connected, but iOS did not expose a controllable light."
         } else {
-            status = "Connected. Choose a color or start Rainbow."
+            status = "Connected. Adjust RGB or brightness."
+            applyLightColor()
         }
     }
 
@@ -68,27 +88,41 @@ final class ControllerManager: NSObject, ObservableObject {
         refreshControllers()
     }
 
-    func setColor(_ color: Color) {
-        selectedColor = color
+    func setRed(_ value: Double) {
+        red = value
+        applyLightColor()
+    }
+
+    func setGreen(_ value: Double) {
+        green = value
+        applyLightColor()
+    }
+
+    func setBlue(_ value: Double) {
+        blue = value
+        applyLightColor()
+    }
+
+    func setBrightness(_ value: Double) {
+        brightness = value
+        applyLightColor()
+    }
+
+    private func applyLightColor() {
         guard let light = controller?.light else {
-            status = "No controllable controller light is available."
+            if isConnected {
+                status = "This controller connection does not expose a controllable light."
+            }
             return
         }
-        let ui = UIColor(color)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        guard ui.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
-            status = "Couldn't read that color."
-            return
-        }
+
+        let factor = brightness / 100
         light.color = GCColor(
-            red: Float(red),
-            green: Float(green),
-            blue: Float(blue)
+            red: Float((red / 255) * factor),
+            green: Float((green / 255) * factor),
+            blue: Float((blue / 255) * factor)
         )
-        status = "Color command sent."
+        status = "Color applied · \(hexColor) · \(Int(brightness))% brightness"
     }
 
     func startRainbow() {
@@ -96,19 +130,22 @@ final class ControllerManager: NSObject, ObservableObject {
             status = "Connect a controller with a supported light first."
             return
         }
+
         stopRainbow()
         isRainbowRunning = true
-        status = "Rainbow is running. Keep this app open."
+        status = "Rainbow started. iOS may pause it when this app is in the background."
         hue = 0
-        rainbowTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
+
+        let timer = Timer(timeInterval: 0.06, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let light = self.controller?.light else { return }
                 self.hue += 0.0035
                 if self.hue >= 1 { self.hue = 0 }
+
                 let ui = UIColor(
                     hue: self.hue,
                     saturation: 1,
-                    brightness: 1,
+                    brightness: CGFloat(self.brightness / 100),
                     alpha: 1
                 )
                 var r: CGFloat = 0
@@ -116,9 +153,15 @@ final class ControllerManager: NSObject, ObservableObject {
                 var b: CGFloat = 0
                 var a: CGFloat = 0
                 ui.getRed(&r, green: &g, blue: &b, alpha: &a)
+
+                self.red = Double(r * 255)
+                self.green = Double(g * 255)
+                self.blue = Double(b * 255)
                 light.color = GCColor(red: Float(r), green: Float(g), blue: Float(b))
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        rainbowTimer = timer
     }
 
     func stopRainbow() {
@@ -130,67 +173,133 @@ final class ControllerManager: NSObject, ObservableObject {
 
 struct ContentView: View {
     @StateObject private var manager = ControllerManager()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 22) {
-                VStack(spacing: 8) {
-                    Image(systemName: manager.isConnected ? "gamecontroller.fill" : "gamecontroller")
-                        .font(.system(size: 48))
-                        .foregroundColor(manager.isConnected ? .green : .secondary)
-                    Text(manager.controllerName)
-                        .font(.title2.bold())
-                    Text(manager.status)
-                        .font(.footnote)
+            ScrollView {
+                VStack(spacing: 20) {
+                    VStack(spacing: 8) {
+                        Image(systemName: manager.isConnected ? "gamecontroller.fill" : "gamecontroller")
+                            .font(.system(size: 48))
+                            .foregroundColor(manager.isConnected ? .green : .secondary)
+
+                        Text(manager.controllerName)
+                            .font(.title2.bold())
+
+                        Text(manager.status)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    Button {
+                        manager.startDiscovery()
+                    } label: {
+                        Label("Refresh Controller", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    VStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(manager.previewColor)
+                            .frame(height: 90)
+                            .overlay {
+                                Text(manager.hexColor)
+                                    .font(.title3.monospaced().bold())
+                                    .foregroundStyle(manager.brightness < 45 ? .white : .black)
+                            }
+
+                        Text("Live color preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    VStack(spacing: 14) {
+                        rgbSlider(title: "Red", value: manager.red, tint: .red) {
+                            manager.setRed($0)
+                        }
+                        rgbSlider(title: "Green", value: manager.green, tint: .green) {
+                            manager.setGreen($0)
+                        }
+                        rgbSlider(title: "Blue", value: manager.blue, tint: .blue) {
+                            manager.setBlue($0)
+                        }
+                    }
+                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Brightness")
+                            Spacer()
+                            Text("\(Int(manager.brightness))%")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: Binding(
+                            get: { manager.brightness },
+                            set: { manager.setBrightness($0) }
+                        ), in: 0...100, step: 1)
+                        .tint(.yellow)
+                    }
+                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+                    Button {
+                        manager.isRainbowRunning ? manager.stopRainbow() : manager.startRainbow()
+                    } label: {
+                        Label(
+                            manager.isRainbowRunning ? "Stop Rainbow" : "Start Rainbow",
+                            systemImage: manager.isRainbowRunning ? "stop.fill" : "rainbow"
+                        )
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(manager.isRainbowRunning ? .red : .purple)
+                    .disabled(!manager.isConnected)
+
+                    Text("Background note: iOS can suspend apps after you switch to Instagram or another app. This build does not guarantee that animated Rainbow continues in the background. A static color may remain on the controller after the last color command.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-
-                Button {
-                    manager.startDiscovery()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        manager.refreshControllers()
-                    }
-                } label: {
-                    Label("Refresh Controller", systemImage: "arrow.clockwise")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-
-                ColorPicker("Choose a controller color", selection: Binding(
-                    get: { manager.selectedColor },
-                    set: { manager.setColor($0) }
-                ), supportsOpacity: false)
                 .padding()
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-
-                Button {
-                    manager.isRainbowRunning ? manager.stopRainbow() : manager.startRainbow()
-                } label: {
-                    Label(
-                        manager.isRainbowRunning ? "Stop Rainbow" : "Start Rainbow",
-                        systemImage: manager.isRainbowRunning ? "stop.fill" : "rainbow"
-                    )
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(manager.isRainbowRunning ? .red : .purple)
-                .disabled(!manager.isConnected)
-
-                Text("Keep DualSense RGB in the foreground while the rainbow effect runs.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-
-                Spacer()
             }
-            .padding()
             .navigationTitle("DualSense RGB")
         }
-        .onDisappear {
-            manager.stopRainbow()
+        .onChange(of: scenePhase) { phase in
+            if phase == .background && manager.isRainbowRunning {
+                manager.status = "App is in the background. iOS may pause Rainbow until you return."
+            } else if phase == .active && manager.isRainbowRunning {
+                manager.status = "App active. Rainbow is running."
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rgbSlider(
+        title: String,
+        value: Double,
+        tint: Color,
+        onChange: @escaping (Double) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(Int(value))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: Binding(
+                get: { value },
+                set: { onChange($0) }
+            ), in: 0...255, step: 1)
+            .tint(tint)
         }
     }
 }
