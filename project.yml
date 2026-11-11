@@ -1,0 +1,23 @@
+name: DualSenseRGB
+
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+
+targets:
+  DualSenseRGB:
+    type: application
+    platform: iOS
+    sources:
+      - path: DualSenseRGBApp.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.DualSenseRGB
+        PRODUCT_NAME: DualSenseRGB
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: DualSense RGB
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
