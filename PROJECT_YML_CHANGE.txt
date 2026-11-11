@@ -1,0 +1,9 @@
+In project.yml, add the asset catalog to the target's sources list:
+
+targets:
+  DualSenseRGB:
+    sources:
+      - path: DualSenseRGBApp.swift
+      - path: Assets.xcassets
+
+Keep your existing target settings. Then regenerate/build with your existing GitHub Actions workflow.
